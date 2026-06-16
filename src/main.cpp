@@ -11,6 +11,11 @@
 #include "config.h"
 #include "state_processing.h"
 
+// Serial command buffer
+constexpr size_t kSerialBufferSize = 128;
+char serialBuffer[kSerialBufferSize] = {};
+size_t serialBufferPos = 0;
+
 namespace {
 
 const uint8_t kBroadcastMac[ESP_NOW_ETH_ALEN] = {
@@ -61,6 +66,9 @@ void clearDeviceState(DeviceState &state) {
   state.version = kProtocolVersion;
   state.txPower = 0;
   state.temperature = 0.0f;
+  state.value = 0.0f;
+  state.rulesSequence = 0;
+  state.valueSequence = 0;
 }
 
 void clearClosestDevice(ClosestDeviceState &device) {
@@ -265,18 +273,22 @@ void broadcastState(uint32_t nowMs) {
 }
 
 void printDeviceState(const char *label, const DeviceState &state) {
-  Serial.printf("%s mac=%s seq=%lu uptime=%lu tx=%d temp=%.1fC values=[", label,
+#if kEnableSerialDebug
+  Serial.printf("%s mac=%s seq=%lu uptime=%lu tx=%d temp=%.1fC value=%.4f rseq=%lu vseq=%lu rules=[", label,
                 macToString(state.mac).c_str(),
                 static_cast<unsigned long>(state.sequence),
                 static_cast<unsigned long>(state.uptimeMs),
-                state.txPower, state.temperature);
-  for (size_t i = 0; i < kStateValueCount; ++i) {
+                state.txPower, state.temperature, state.value,
+                static_cast<unsigned long>(state.rulesSequence),
+                static_cast<unsigned long>(state.valueSequence));
+  for (size_t i = 0; i < kRulesCount; ++i) {
     if (i > 0) {
       Serial.print(", ");
     }
-    Serial.print(state.values[i]);
+    Serial.print(state.rules[i], 4);
   }
   Serial.println("]");
+#endif
 }
 
 void printFullState(uint32_t nowMs) {
@@ -365,10 +377,49 @@ void setup() {
                 kWifiChannel, macToString(selfMac).c_str());
 }
 
+void handleSerialInput() {
+  while (Serial.available() > 0) {
+    char c = Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (serialBufferPos > 0) {
+        serialBuffer[serialBufferPos] = '\0';
+        // Parse command: "rules r0,r1,...,r8"
+        if (strncmp(serialBuffer, "rules ", 6) == 0) {
+          char* token = strtok(serialBuffer + 6, ",");
+          int index = 0;
+          while (token != nullptr && index < kRulesCount) {
+            selfState.rules[index++] = atof(token);
+            token = strtok(nullptr, ",");
+          }
+          if (index == kRulesCount) {
+            selfState.rulesSequence++;
+#if kEnableSerialEssential
+            Serial.println("Rules updated!");
+#endif
+          } else {
+#if kEnableSerialEssential
+            Serial.println("Error: Need exactly 9 rule values");
+#endif
+          }
+        } else if (strcmp(serialBuffer, "reset") == 0) {
+          resetStateValue(selfState);
+#if kEnableSerialEssential
+          Serial.println("Value reset!");
+#endif
+        }
+        serialBufferPos = 0;
+      }
+    } else if (serialBufferPos < kSerialBufferSize - 1) {
+      serialBuffer[serialBufferPos++] = c;
+    }
+  }
+}
+
 void loop() {
   const uint32_t nowMs = millis();
   expireOldPeers(nowMs);
   adjustTxPower(nowMs);
+  handleSerialInput();
 
   if (static_cast<int32_t>(nowMs - nextProcessMs) >= 0) {
     nextProcessMs = nowMs + kProcessIntervalMs;

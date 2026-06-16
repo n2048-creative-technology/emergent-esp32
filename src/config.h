@@ -4,6 +4,10 @@
 #include <cstddef>
 #include <cstdint>
 
+//debug 
+#define kEnableSerialDebug true
+#define kEnableSerialEssential true
+
 // Protocol
 constexpr uint32_t kProtocolMagic = 0x46464C59;  // "FFLY"
 constexpr uint8_t kProtocolVersion = 1;

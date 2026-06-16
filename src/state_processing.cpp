@@ -1,34 +1,67 @@
 #include "state_processing.h"
+#include <cmath>
 
 void initState(DeviceState &state) {
-  for (size_t i = 0; i < kStateValueCount; ++i) {
-    state.values[i] = static_cast<int32_t>(esp_random() % 20001) - 10000;
+  // Initialize value with random float
+  state.value = (esp_random() % 20001 - 10000) / 1000.0f;
+  state.rulesSequence = 0;
+  state.valueSequence = 0;
+
+  // Initialize rules with random floats
+  for (size_t i = 0; i < kRulesCount; ++i) {
+    state.rules[i] = (esp_random() % 20001 - 10000) / 1000.0f;
   }
 }
 
+
 void processState(DeviceState &ownState, const ClosestDeviceState closest[],
                   size_t closestCount) {
-  int64_t neighborValueTotals[kStateValueCount] = {};
-  int32_t neighborCount = 0;
-
+  // First, check for newer rules from neighbors and propagate
   for (size_t i = 0; i < closestCount; ++i) {
-    if (!closest[i].valid) {
-      continue;
+    if (closest[i].valid && closest[i].state.rulesSequence > ownState.rulesSequence) {
+      // Copy rules from neighbor
+      ownState.rulesSequence = closest[i].state.rulesSequence;
+      for (size_t j = 0; j < kRulesCount; ++j) {
+        ownState.rules[j] = closest[i].state.rules[j];
+      }
     }
+  }
 
-    ++neighborCount;
-    for (size_t value = 0; value < kStateValueCount; ++value) {
-      neighborValueTotals[value] += closest[i].state.values[value];
+  // Check for reset propagation from neighbors
+  for (size_t i = 0; i < closestCount; ++i) {
+    if (closest[i].valid && closest[i].state.valueSequence > ownState.valueSequence) {
+      // Neighbor has newer value reset - propagate it
+      ownState.valueSequence = closest[i].state.valueSequence;
+      resetStateValue(ownState);
     }
   }
 
-  if (neighborCount == 0) {
-    return;
+  // Build array: [neighbor0.value, neighbor1.value, ..., neighbor7.value, ownState.value]
+  float neighborValues[kRulesCount] = {};
+  for (size_t i = 0; i < closestCount && i < kRulesCount - 1; ++i) {
+    if (closest[i].valid) {
+      neighborValues[i] = closest[i].state.value;
+    }
+  }
+  // Last element is own value
+  neighborValues[kRulesCount - 1] = ownState.value;
+
+  // Calculate dot product: sum(rules[i] * neighborValues[i])
+  float newValue = 0.0f;
+  for (size_t i = 0; i < kRulesCount; ++i) {
+    newValue += ownState.rules[i] * neighborValues[i];
   }
 
-  for (size_t value = 0; value < kStateValueCount; ++value) {
-    const int32_t neighborAverage =
-        static_cast<int32_t>(neighborValueTotals[value] / neighborCount);
-    ownState.values[value] = ((ownState.values[value] * 3) + neighborAverage) / 4;
+  // Check for NaN or Inf
+  if (std::isnan(newValue) || std::isinf(newValue)) {
+    // Reset to initial random value
+    newValue = (esp_random() % 20001 - 10000) / 1000.0f;
   }
+
+  ownState.value = newValue;
+}
+
+void resetStateValue(DeviceState &state) {
+  state.value = (esp_random() % 20001 - 10000) / 1000.0f;
+  state.valueSequence++;
 }

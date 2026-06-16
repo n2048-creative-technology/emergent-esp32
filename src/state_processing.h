@@ -7,7 +7,7 @@
 #include <esp_now.h>
 #include <esp_random.h>
 
-constexpr size_t kStateValueCount = 8;
+constexpr size_t kRulesCount = 9;
 
 struct DeviceState {
   uint32_t magic;
@@ -17,7 +17,10 @@ struct DeviceState {
   uint32_t uptimeMs;
   int8_t txPower;
   float temperature;
-  int32_t values[kStateValueCount];
+  float value;
+  uint32_t rulesSequence;
+  uint32_t valueSequence;
+  float rules[kRulesCount];
 };
 
 struct ClosestDeviceState {
@@ -28,6 +31,7 @@ struct ClosestDeviceState {
 };
 
 void initState(DeviceState &state);
+void resetStateValue(DeviceState &state);
 void processState(DeviceState &ownState, const ClosestDeviceState closest[],
                   size_t closestCount);
 
