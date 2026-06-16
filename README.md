@@ -134,5 +134,3 @@ pio device monitor
 ## License
 
 Open source for research and experimentation.
-# emergent-esp32
-# emergent-esp32
