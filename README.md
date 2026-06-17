@@ -112,6 +112,42 @@ neighbor[0] rssi=-45 age=120 state mac=11:22:33:44:55:66 seq=41 uptime=118 tx=38
 --------------------
 ```
 
+### Serial Output Field Reference
+
+**Self line fields:**
+| Field | Unit | Description |
+|-------|------|-------------|
+| `mac` | - | Device MAC address (unique identifier) |
+| `seq` | - | Main sequence number (message counter) |
+| `uptime` | ms | Time since device boot |
+| `tx` | units | Current TX power (ESP32 units: 84 = 21 dBm = 125 mW) |
+| `temp` | °C | Chip temperature from internal sensor |
+| `value` | - | Current binary state: 0 or 1 |
+| `kseq` | - | Kernel sequence number (increments when kernel is updated) |
+| `vseq` | - | Value sequence number (increments when value is reset) |
+| `aseq` | - | Activation sequence number (increments when activations are updated) |
+| `kernel` | - | Array of 9 kernel weights [k0, k1, ..., k8] for neighbors + self |
+| `activations` | - | Array of activation conditions (op,value pairs) |
+
+**Neighbor line fields:**
+| Field | Unit | Description |
+|-------|------|-------------|
+| `neighbor[N]` | - | Neighbor index (0-7, top 8 by RSSI) |
+| `rssi` | dBm | Received signal strength (negative dBm: -45 is strong, -80 is weak) |
+| `age` | ms | Time since last message received from this neighbor (stale if >10,000ms) |
+| `state` | - | Start of neighbor's DeviceState fields |
+| `mac` | - | Neighbor's MAC address |
+| `seq` | - | Neighbor's main sequence number |
+| `uptime` | ms | Neighbor's uptime |
+| `tx` | units | Neighbor's TX power |
+| `temp` | °C | Neighbor's temperature |
+| `value` | - | Neighbor's current binary state |
+| `kseq` | - | Neighbor's kernel sequence number |
+| `vseq` | - | Neighbor's value sequence number |
+| `aseq` | - | Neighbor's activation sequence number |
+| `kernel` | - | Neighbor's kernel weights |
+| `activations` | - | Neighbor's activation conditions |
+
 ## Building & Flashing
 
 ### PlatformIO
