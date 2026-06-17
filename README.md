@@ -140,6 +140,39 @@ Send commands via serial monitor (115200 baud):
 
 Kernel, activations, and resets propagate automatically through the mesh — no need to send to each device individually.
 
+## Graphical User Interface
+
+A Python-based GUI (`firefly_gui.py`) is available for easy configuration and monitoring:
+
+### Features
+- **Serial Monitor Tab**: Real-time display of device output with connect/disconnect controls
+- **Kernel Tab**: Set all 9 kernel weights with convenient preset buttons
+- **Activations Tab**: Dynamically add/remove activation conditions with op/value pairs
+- **Presets Tab**: Load predefined cellular automata (conway, rule30, majority, and, or) with descriptions
+
+### Installation
+```bash
+pip install pyserial
+```
+
+### Usage
+```bash
+python3 firefly_gui.py
+```
+
+### Screenshot / Layout
+- **Serial Monitor**: Select port, connect, view real-time output
+- **Kernel**: 9 input fields for kernel weights, preset buttons (All 1, All 0, Neighbors Only)
+- **Activations**: Add/remove activation rows, each with operator (0-4) and value
+- **Presets**: Dropdown to select preset, displays description, buttons to load preset into UI or send directly to device
+
+### Workflow
+1. Connect to device via Serial Monitor tab
+2. Configure kernel weights in Kernel tab (or load preset)
+3. Configure activation conditions in Activations tab (or load preset)
+4. Send configuration to device
+5. Monitor device behavior in real-time
+
 ### Cellular Automata Presets
 
 | Preset | Kernel | Activations | Behavior |
