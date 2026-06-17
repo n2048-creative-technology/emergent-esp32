@@ -213,11 +213,11 @@ python3 firefly_gui.py
 
 | Preset | Kernel | Activations | Behavior |
 |--------|--------|-------------|----------|
-| `conway` | Neighbors weighted as 1, self weighted as 10 | sum == 3 OR sum == 12 OR sum == 13 | **Conway's Game of Life**: Born at exactly 3 neighbors, survives at 2-3 neighbors |
-| `rule30` | First 3 neighbors weighted as 1 | sum == 1 OR sum == 2 | Simplified Rule 30 approximation for 2D |
-| `majority` | All 8 neighbors weighted as 1 | sum >= 5 | Becomes 1 if majority (5+) of neighbors are 1 |
-| `and` | All 8 neighbors weighted as 1 | sum == 8 | Becomes 1 only if ALL 8 neighbors are 1 |
-| `or` | All 8 neighbors weighted as 1 | sum >= 1 | Becomes 1 if ANY neighbor is 1 |
+| `conway` | `[1,1,1,1,1,1,1,1,10]` | `[==3, ==12, ==13]` | **Conway's Game of Life**: Born at exactly 3 neighbors, survives at 2-3 neighbors (self-weight=10 encodes state) |
+| `rule30` | `[1,1,1,0,0,0,0,0,0]` | `[==1, ==2]` | Simplified Rule 30 approximation for 2D (first 3 neighbors only) |
+| `majority` | `[1,1,1,1,1,1,1,1,0]` | `[>=5]` | Becomes 1 if majority (5+) of 8 neighbors are 1 |
+| `and` | `[1,1,1,1,1,1,1,1,0]` | `[==8]` | Becomes 1 only if ALL 8 neighbors are 1 |
+| `or` | `[1,1,1,1,1,1,1,1,0]` | `[>=1]` | Becomes 1 if ANY neighbor is 1 |
 
 **Note**: The `conway` preset uses self-weight=10 as an offset to encode the current cell state in the weighted sum, allowing birth (sum=3) and survival (sum=12 or 13) activations to be distinguished.
 
@@ -257,3 +257,7 @@ python3 firefly_gui.py
 ## License
 
 Open source for research and experimentation.
+
+---
+
+**Project Credit**: Designed and implemented by Mauricio van der Maesen de Sombreff.
