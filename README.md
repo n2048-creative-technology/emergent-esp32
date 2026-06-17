@@ -4,14 +4,14 @@ A decentralized mesh firmware for ESP32-C3 devices that enables emergent swarm b
 
 ## Overview
 
-Each device operates as an independent node in a peer-to-peer network, broadcasting its state and observing nearby neighbors. The system demonstrates emergent collective behavior through simple local rules, with no central coordinator.
+Each device operates as an independent node in a peer-to-peer network, broadcasting its state and observing nearby neighbors. The system demonstrates emergent collective behavior through simple local interactions, with no central coordinator.
 
 ## Features
 
 ### Core Communication
 - **ESP-NOW Protocol**: Peer-to-peer WiFi communication without an access point
 - **Broadcast Mesh**: Each device broadcasts to all neighbors on a configurable WiFi channel
-- **State Propagation**: Devices share their state (value, rules, TX power, chip temperature, uptime) with the network
+- **State Propagation**: Devices share their state (value, kernel, TX power, chip temperature, uptime) with the network
 
 ### Adaptive Radio
 - **Automatic TX Power Control**: Dynamically adjusts transmit power to maintain 8-10 neighbors
@@ -19,10 +19,15 @@ Each device operates as an independent node in a peer-to-peer network, broadcast
 - **Closed-Loop Control**: Measures neighbor count, adjusts in 1 dBm steps every 5 seconds
 
 ### Distributed State
-- **Single State Value**: Each device maintains a single float value in range [-1, 1]
-- **Rules Array**: 9 coefficients in range [-1, 1] that define how neighbor values influence own value
-- **Dot Product Calculation**: `value = Σ(rules[i] × inputs[i])` where inputs = [n0.value, n1.value, ..., n7.value, own.value]
-- **Random Initialization**: Devices start with random values and rules in range [-1, 1]
+- **Binary State Value**: Each device maintains a single boolean value (0 or 1)
+- **Kernel Array**: 9 float coefficients that define how neighbor values influence own value (convolution kernel)
+- **Activation Functions**: Up to 8 activations that determine next state based on weighted sum
+  - Each activation: operator (0="<", 1="<=", 2="==", 3=">=", 4=">") + threshold value
+  - Next state = 1 if ANY activation is true (OR logic)
+  - Falls back to threshold at 0 if no activations set
+  - **Presets include both kernel and activations** for classic cellular automata behavior
+- **Thresholded Calculation**: `value = (Σ(kernel[i] × inputs[i]) > 0) ? 1 : 0` where inputs = [n0.value, n1.value, ..., n7.value, own.value]
+- **Random Initialization**: Devices start with random binary values and random kernel weights
 
 ### Peer Management
 - **Neighbor Tracking**: Each device tracks up to 24 known peers
@@ -83,24 +88,26 @@ kClosestPeerCount  - Number of closest peers for state processing
 2. `DeviceState` includes:
    - Protocol headers (magic, version)
    - Device identity (MAC address)
-   - Sequence numbers (main, rules, value) and uptime
+   - Sequence numbers (main, kernel, value, activation) and uptime
    - Current TX power (in ESP32 units)
    - Chip temperature
-   - Single state value
-   - 9 coefficients (rules array)
+   - Single state value (binary 0/1)
+   - 9 coefficients (kernel array)
+   - Up to 8 activations for state transitions (operator + threshold)
 3. Receiving devices:
    - Store sender in peer list with RSSI
-   - Propagate rules if neighbor has newer `rulesSequence`
+   - Propagate kernel if neighbor has newer `kernelSequence`
+   - Propagate activations if neighbor has newer `activationSequence`
    - Propagate value reset if neighbor has newer `valueSequence`
-   - Compute new value as dot product of rules and neighbor values
+   - Compute new value using kernel and activations
    - Adjust own TX power based on peer count
 
 ### Visualization Output
 Serial output (115200 baud) shows:
 ```
 ---- full state ----
-self mac=AA:BB:CC:DD:EE:FF seq=42 uptime=120 tx=42 temp=35.7C value=1.2345 rseq=5 vseq=3 rules=[0.12, -0.34, ...]
-neighbor[0] rssi=-45 age=120 state mac=11:22:33:44:55:66 seq=41 uptime=118 tx=38 temp=36.1C value=2.3456 rseq=5 vseq=3 rules=[0.12, -0.34, ...]
+self mac=AA:BB:CC:DD:EE:FF seq=42 uptime=120 tx=42 temp=35.7C value=1 kseq=5 vseq=3 aseq=2 kernel=[0.12, -0.34, ...] activations=[<2.00, ==4.00]
+neighbor[0] rssi=-45 age=120 state mac=11:22:33:44:55:66 seq=41 uptime=118 tx=38 temp=36.1C value=0 kseq=5 vseq=3 aseq=2 kernel=[0.12, -0.34, ...] activations=[<2.00, ==4.00]
 ...
 --------------------
 ```
@@ -125,22 +132,41 @@ Send commands via serial monitor (115200 baud):
 
 | Command | Description |
 |---------|-------------|
-| `rules r0,r1,r2,r3,r4,r5,r6,r7,r8` | Set 9 rule coefficients (e.g., `rules 0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9`) |
-| `reset` | Reset state value to random, propagates to all neighbors |
+| `kernel k0,k1,...,k8` | Set 9 kernel coefficients (e.g., `kernel 1,1,1,1,1,1,1,1,0`) |
+| `preset <name>` | Load predefined CA: `conway` (Game of Life), `rule30`, `majority`, `and`, `or`. Sets both kernel and activations for classic behavior |
+| `activations op1,val1,op2,val2,...` | Set up to 8 activations. op: 0="<", 1="<=", 2="==", 3=">=", 4=">". Example: `activations 0,2,2,4,2,12` (sum < 2 OR sum == 4 OR sum == 12) |
+| `reset` | Reset state to random 0/1, propagates to all neighbors |
+| `set AA:BB:CC:DD:EE:FF 0\1` | Set own state to 0 or 1 (only works for self MAC) |
 
-Rules and resets propagate automatically through the mesh — no need to send to each device individually.
+Kernel, activations, and resets propagate automatically through the mesh — no need to send to each device individually.
+
+### Cellular Automata Presets
+
+| Preset | Kernel | Activations | Behavior |
+|--------|--------|-------------|----------|
+| `conway` | Neighbors weighted as 1, self weighted as 10 | sum == 3 OR sum == 12 OR sum == 13 | **Conway's Game of Life**: Born at exactly 3 neighbors, survives at 2-3 neighbors |
+| `rule30` | First 3 neighbors weighted as 1 | sum == 1 OR sum == 2 | Simplified Rule 30 approximation for 2D |
+| `majority` | All 8 neighbors weighted as 1 | sum >= 5 | Becomes 1 if majority (5+) of neighbors are 1 |
+| `and` | All 8 neighbors weighted as 1 | sum == 8 | Becomes 1 only if ALL 8 neighbors are 1 |
+| `or` | All 8 neighbors weighted as 1 | sum >= 1 | Becomes 1 if ANY neighbor is 1 |
+
+**Note**: The `conway` preset uses self-weight=10 as an offset to encode the current cell state in the weighted sum, allowing birth (sum=3) and survival (sum=12 or 13) activations to be distinguished.
 
 ## Technical Notes
 
 ### ESP-NOW Details
 - Uses broadcast MAC address: `FF:FF:FF:FF:FF:FF`
-- Frame size: ~76 bytes (well under 250 byte limit)
+- Frame size: ~148 bytes (well under 250 byte limit)
 - No encryption (for maximum compatibility)
 
 ### State Calculation
-- `value = rules[0]×n0.value + rules[1]×n1.value + ... + rules[8]×own.value`
+- `sum = kernel[0]×n0.value + kernel[1]×n1.value + ... + kernel[8]×own.value`
+- Without activations: `value = (sum > 0) ? 1 : 0` (default threshold at 0)
+- With activations: `value = 1` if ANY activation matches (OR logic), else 0
 - Input vector: [neighbor0.value, neighbor1.value, ..., neighbor7.value, own.value]
-- NaN/Inf protection: Auto-resets to random value in range [-1, 1]
+- All values are binary (0 or 1), kernel weights are floats (typically 0-1 for counting, or -1 to 1 for inhibition/excitation)
+- Activations: each has operator (0-4: <, <=, ==, >=, >) and threshold value, evaluated against weighted sum
+- **Conway preset trick**: self-weight=10 encodes current state in sum, enabling state-dependent transition activation
 
 ### TX Power Units
 - ESP32 uses units of 0.25 dBm
@@ -149,7 +175,8 @@ Rules and resets propagate automatically through the mesh — no need to send to
 
 ### Sequence Numbers
 - `sequence`: Main message counter
-- `rulesSequence`: Increments when rules are updated via serial
+- `kernelSequence`: Increments when kernel is updated via serial
+- `activationSequence`: Increments when activations are updated via serial
 - `valueSequence`: Increments when value is reset via serial
 - Higher sequence numbers propagate automatically through the network
 

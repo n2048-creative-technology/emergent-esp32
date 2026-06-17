@@ -7,6 +7,7 @@
 #include <esp_now.h>
 #include <esp_wifi.h>
 #include <cmath>
+#include <cstring>
 
 #include "config.h"
 #include "state_processing.h"
@@ -66,9 +67,11 @@ void clearDeviceState(DeviceState &state) {
   state.version = kProtocolVersion;
   state.txPower = 0;
   state.temperature = 0.0f;
-  state.value = 0.0f;
-  state.rulesSequence = 0;
+  state.value = false;
+  state.kernelSequence = 0;
   state.valueSequence = 0;
+  state.activationSequence = 0;
+  state.activationCount = 0;
 }
 
 void clearClosestDevice(ClosestDeviceState &device) {
@@ -274,18 +277,34 @@ void broadcastState(uint32_t nowMs) {
 
 void printDeviceState(const char *label, const DeviceState &state) {
 #if kEnableSerialDebug
-  Serial.printf("%s mac=%s seq=%lu uptime=%lu tx=%d temp=%.1fC value=%.4f rseq=%lu vseq=%lu rules=[", label,
+  Serial.printf("%s mac=%s seq=%lu uptime=%lu tx=%d temp=%.1fC value=%d kseq=%lu vseq=%lu aseq=%lu kernel=[", label,
                 macToString(state.mac).c_str(),
                 static_cast<unsigned long>(state.sequence),
                 static_cast<unsigned long>(state.uptimeMs),
-                state.txPower, state.temperature, state.value,
-                static_cast<unsigned long>(state.rulesSequence),
-                static_cast<unsigned long>(state.valueSequence));
-  for (size_t i = 0; i < kRulesCount; ++i) {
+                state.txPower, state.temperature, state.value ? 1 : 0,
+                static_cast<unsigned long>(state.kernelSequence),
+                static_cast<unsigned long>(state.valueSequence),
+                static_cast<unsigned long>(state.activationSequence));
+  for (size_t i = 0; i < kKernelSize; ++i) {
     if (i > 0) {
       Serial.print(", ");
     }
-    Serial.print(state.rules[i], 4);
+    Serial.print(state.kernel[i], 4);
+  }
+  Serial.print("] activations=[");
+  for (uint8_t i = 0; i < state.activationCount; ++i) {
+    if (i > 0) {
+      Serial.print(", ");
+    }
+    const char* opStr = "";
+    switch(state.activations[i].op) {
+      case 0: opStr = "<"; break;
+      case 1: opStr = "<="; break;
+      case 2: opStr = "=="; break;
+      case 3: opStr = ">="; break;
+      case 4: opStr = ">"; break;
+    }
+    Serial.printf("%s%.2f", opStr, state.activations[i].value);
   }
   Serial.println("]");
 #endif
@@ -377,28 +396,60 @@ void setup() {
                 kWifiChannel, macToString(selfMac).c_str());
 }
 
+bool parseMacAddress(const char* str, uint8_t mac[ESP_NOW_ETH_ALEN]) {
+  int values[6];
+  if (sscanf(str, "%02x:%02x:%02x:%02x:%02x:%02x",
+             &values[0], &values[1], &values[2], &values[3], &values[4], &values[5]) != 6) {
+    return false;
+  }
+  for (int i = 0; i < 6; ++i) {
+    mac[i] = static_cast<uint8_t>(values[i]);
+  }
+  return true;
+}
+
+bool macMatchesConst(const uint8_t a[ESP_NOW_ETH_ALEN], const uint8_t b[ESP_NOW_ETH_ALEN]) {
+  return memcmp(a, b, ESP_NOW_ETH_ALEN) == 0;
+}
+
 void handleSerialInput() {
   while (Serial.available() > 0) {
     char c = Serial.read();
     if (c == '\n' || c == '\r') {
       if (serialBufferPos > 0) {
         serialBuffer[serialBufferPos] = '\0';
-        // Parse command: "rules r0,r1,...,r8"
-        if (strncmp(serialBuffer, "rules ", 6) == 0) {
-          char* token = strtok(serialBuffer + 6, ",");
+        
+        // Parse command: "kernel k0,k1,...,k8"
+        if (strncmp(serialBuffer, "kernel ", 7) == 0) {
+          char* token = strtok(serialBuffer + 7, ",");
           int index = 0;
-          while (token != nullptr && index < kRulesCount) {
-            selfState.rules[index++] = atof(token);
+          while (token != nullptr && index < kKernelSize) {
+            selfState.kernel[index++] = atof(token);
             token = strtok(nullptr, ",");
           }
-          if (index == kRulesCount) {
-            selfState.rulesSequence++;
+          if (index == kKernelSize) {
+            selfState.kernelSequence++;
 #if kEnableSerialEssential
-            Serial.println("Rules updated!");
+            Serial.println("Kernel updated!");
 #endif
           } else {
 #if kEnableSerialEssential
-            Serial.println("Error: Need exactly 9 rule values");
+            Serial.println("Error: Need exactly 9 kernel values");
+#endif
+          }
+        } else if (strncmp(serialBuffer, "preset ", 7) == 0) {
+          // Load preset with kernel AND activations: "preset conway", "preset rule30", etc.
+          char* presetName = serialBuffer + 7;
+          if (loadPreset(selfState, presetName)) {
+            selfState.kernelSequence++;
+            selfState.activationSequence++;
+#if kEnableSerialEssential
+            Serial.print("Preset loaded: ");
+            Serial.println(presetName);
+#endif
+          } else {
+#if kEnableSerialEssential
+            Serial.println("Error: Unknown preset. Use: conway, rule30, majority, and, or");
 #endif
           }
         } else if (strcmp(serialBuffer, "reset") == 0) {
@@ -406,6 +457,68 @@ void handleSerialInput() {
 #if kEnableSerialEssential
           Serial.println("Value reset!");
 #endif
+        } else if (strncmp(serialBuffer, "activations ", 12) == 0) {
+          // Format: "activations op1,val1,op2,val2,..."
+          // op: 0="<", 1="<=", 2="==", 3=">=", 4=">"
+          char* token = strtok(serialBuffer + 12, ",");
+          uint8_t count = 0;
+          while (token != nullptr && count < kMaxActivations) {
+            int op = atoi(token);
+            token = strtok(nullptr, ",");
+            if (token == nullptr) break;
+            float val = atof(token);
+            token = strtok(nullptr, ",");
+            if (op >= 0 && op <= 4) {
+              selfState.activations[count].op = static_cast<uint8_t>(op);
+              selfState.activations[count].value = val;
+              count++;
+            }
+          }
+          if (count > 0) {
+            selfState.activationCount = count;
+            selfState.activationSequence++;
+#if kEnableSerialEssential
+            Serial.print("Activations set (");
+            Serial.print(count);
+            Serial.println(" activations)");
+#endif
+          } else {
+#if kEnableSerialEssential
+            Serial.println("Error: No valid conditions");
+#endif
+          }
+        } else if (strncmp(serialBuffer, "set ", 4) == 0) {
+          // Format: "set AA:BB:CC:DD:EE:FF 0" or "set AA:BB:CC:DD:EE:FF 1"
+          char* macStr = serialBuffer + 4;
+          char* spacePos = strchr(macStr, ' ');
+          if (spacePos) {
+            *spacePos = '\0';
+            uint8_t targetMac[ESP_NOW_ETH_ALEN];
+            if (parseMacAddress(macStr, targetMac) &&
+                macMatchesConst(targetMac, selfMac)) {
+              int newValue = atoi(spacePos + 1);
+              if (newValue == 0 || newValue == 1) {
+                selfState.value = static_cast<bool>(newValue);
+                selfState.valueSequence++;
+#if kEnableSerialEssential
+                Serial.print("State set to ");
+                Serial.println(newValue);
+#endif
+              } else {
+#if kEnableSerialEssential
+                Serial.println("Error: Value must be 0 or 1");
+#endif
+              }
+            } else {
+#if kEnableSerialEssential
+              Serial.println("Error: MAC address mismatch or invalid format");
+#endif
+            }
+          } else {
+#if kEnableSerialEssential
+            Serial.println("Error: Usage: set AA:BB:CC:DD:EE:FF 0\1");
+#endif
+          }
         }
         serialBufferPos = 0;
       }

@@ -7,7 +7,13 @@
 #include <esp_now.h>
 #include <esp_random.h>
 
-constexpr size_t kRulesCount = 9;
+constexpr size_t kKernelSize = 9;
+constexpr size_t kMaxActivations = 8;
+
+struct Activation {
+  uint8_t op;    // 0="<", 1="<=", 2="==", 3=">=", 4=">"
+  float value;
+};
 
 struct DeviceState {
   uint32_t magic;
@@ -17,10 +23,13 @@ struct DeviceState {
   uint32_t uptimeMs;
   int8_t txPower;
   float temperature;
-  float value;
-  uint32_t rulesSequence;
+  bool value;  // Binary: 0 or 1
+  uint32_t kernelSequence;
   uint32_t valueSequence;
-  float rules[kRulesCount];
+  uint32_t activationSequence;
+  float kernel[kKernelSize];
+  Activation activations[kMaxActivations];
+  uint8_t activationCount;
 };
 
 struct ClosestDeviceState {
@@ -34,5 +43,7 @@ void initState(DeviceState &state);
 void resetStateValue(DeviceState &state);
 void processState(DeviceState &ownState, const ClosestDeviceState closest[],
                   size_t closestCount);
+bool loadPresetKernel(const char* presetName, float kernel[kKernelSize]);
+bool loadPreset(DeviceState &state, const char* presetName);
 
 #endif
