@@ -19,10 +19,10 @@ Each device operates as an independent node in a peer-to-peer network, broadcast
 - **Closed-Loop Control**: Measures neighbor count, adjusts in 1 dBm steps every 5 seconds
 
 ### Distributed State
-- **Single State Value**: Each device maintains a single float value
-- **Rules Array**: 9 coefficients that define how neighbor values influence own value
+- **Single State Value**: Each device maintains a single float value in range [-1, 1]
+- **Rules Array**: 9 coefficients in range [-1, 1] that define how neighbor values influence own value
 - **Dot Product Calculation**: `value = Σ(rules[i] × inputs[i])` where inputs = [n0.value, n1.value, ..., n7.value, own.value]
-- **Random Initialization**: Devices start with random values and rules
+- **Random Initialization**: Devices start with random values and rules in range [-1, 1]
 
 ### Peer Management
 - **Neighbor Tracking**: Each device tracks up to 24 known peers
@@ -140,7 +140,7 @@ Rules and resets propagate automatically through the mesh — no need to send to
 ### State Calculation
 - `value = rules[0]×n0.value + rules[1]×n1.value + ... + rules[8]×own.value`
 - Input vector: [neighbor0.value, neighbor1.value, ..., neighbor7.value, own.value]
-- NaN/Inf protection: Auto-resets to random value
+- NaN/Inf protection: Auto-resets to random value in range [-1, 1]
 
 ### TX Power Units
 - ESP32 uses units of 0.25 dBm

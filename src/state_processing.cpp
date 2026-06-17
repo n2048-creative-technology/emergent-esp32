@@ -2,14 +2,14 @@
 #include <cmath>
 
 void initState(DeviceState &state) {
-  // Initialize value with random float
-  state.value = (esp_random() % 20001 - 10000) / 1000.0f;
+  // Initialize value with random float in range [-1, 1]
+  state.value = (esp_random() % 20001 - 10000) / 10000.0f;
   state.rulesSequence = 0;
   state.valueSequence = 0;
 
-  // Initialize rules with random floats
+  // Initialize rules with random floats in range [-1, 1]
   for (size_t i = 0; i < kRulesCount; ++i) {
-    state.rules[i] = (esp_random() % 20001 - 10000) / 1000.0f;
+    state.rules[i] = (esp_random() % 20001 - 10000) / 10000.0f;
   }
 }
 
@@ -54,14 +54,14 @@ void processState(DeviceState &ownState, const ClosestDeviceState closest[],
 
   // Check for NaN or Inf
   if (std::isnan(newValue) || std::isinf(newValue)) {
-    // Reset to initial random value
-    newValue = (esp_random() % 20001 - 10000) / 1000.0f;
+    // Reset to initial random value in range [-1, 1]
+    newValue = (esp_random() % 20001 - 10000) / 10000.0f;
   }
 
   ownState.value = newValue;
 }
 
 void resetStateValue(DeviceState &state) {
-  state.value = (esp_random() % 20001 - 10000) / 1000.0f;
+  state.value = (esp_random() % 20001 - 10000) / 10000.0f;
   state.valueSequence++;
 }
