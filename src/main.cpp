@@ -12,6 +12,23 @@
 #include "config.h"
 #include "state_processing.h"
 
+
+#include <FastLED.h>
+
+// How many leds in your strip?
+#define NUM_LEDS 1
+
+// For led chips like WS2812, which have a data line, ground, and power, you just
+// need to define DATA_PIN.  For led chipsets that are SPI based (four wires - data, clock,
+// ground, and power), like the LPD8806 define both DATA_PIN and CLOCK_PIN
+// Clock pin only needed for SPI based chipsets when not using hardware SPI
+#define DATA_PIN 3
+
+CRGB leds[NUM_LEDS];
+
+float currentBrightness = 0;  // Tracks actual LED brightness (0.0–255.0)
+
+
 // Serial command buffer
 constexpr size_t kSerialBufferSize = 128;
 char serialBuffer[kSerialBufferSize] = {};
@@ -394,6 +411,10 @@ void setup() {
   updateSelfStateMetadata(millis(), sequenceNumber);
   Serial.printf("ESP32 proximity node started on WiFi channel %u, MAC %s\n",
                 kWifiChannel, macToString(selfMac).c_str());
+
+
+  FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);  // GRB ordering is assumed
+
 }
 
 bool parseMacAddress(const char* str, uint8_t mac[ESP_NOW_ETH_ALEN]) {
@@ -550,4 +571,19 @@ void loop() {
     nextPrintMs = nowMs + kPrintIntervalMs;
     printFullState(nowMs);
   }
+
+  
+  // LED adjustment with simple transition effect
+  // Determine target brightness from state
+  float targetBrightness = selfState.value ? 255.0f : 0.0f;
+
+  // Smoothly interpolate current brightness toward target
+  currentBrightness += (targetBrightness - currentBrightness) * transitionSpeed;
+
+  // Clamp to valid range (0–255) and cast to uint8_t for LED
+  uint8_t smoothedBrightness = constrain(static_cast<uint8_t>(currentBrightness), 0, 255);
+  leds[0] = CRGB::blend(CRGB::Black, CRGB::White, smoothedBrightness);
+  FastLED.show();
+
+
 }

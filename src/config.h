@@ -36,4 +36,7 @@ constexpr uint32_t kPeerTimeoutMs = 10000;
 constexpr size_t kMaxKnownPeers = 24;
 constexpr size_t kClosestPeerCount = 8;
 
+// LED
+constexpr float transitionSpeed = 0.10; // Adjust: higher = faster (e.g., 0.02–0.20)
+
 #endif
